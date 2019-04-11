@@ -1,0 +1,8 @@
+[profkernel-workflow]
+numSVMs=1
+kmerWeight=11
+classifier=weka.classifiers.meta.MultiClassClassifier
+numSplits=1
+kmerLength=4
+linesPerFile=160000
+numInstances=955
