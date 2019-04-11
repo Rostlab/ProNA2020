@@ -1,0 +1,613 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
+# ProNA2019 - Prediction of binding protein and binding sites
+#
+# Written by Jiajun Qiu <jiajunqiu@hotmail.com>
+#
+# Copyright (c) 2018 Jiajun Qiu  <jiajunqiu@hotmail.com>
+
+import os
+import os.path
+import sys
+import tempfile
+from optparse import OptionParser
+import glob
+from sklearn.externals import joblib
+import numpy as np
+from prona2019Mod.pp2features import extract_features
+from pybrain.tools.customxml import NetworkReader
+import subprocess
+from prona2019Mod.protvec import to_vecs
+import pickle
+import re
+import shutil
+
+#dir_path = '/usr/share/prona2019'
+dir_path = './'
+
+tmp_dir = tempfile.mkdtemp()
+
+#label = DNA or RNA or Protein
+def residue_prediction(label,data):
+    win = {'DNA':9, 'RNA':9, 'Protein':5}
+    cls = glob.glob(dir_path+'/model/Residue_level/'+label+'_binding/fold*/*')
+    preds_RI = [0]*len(data)
+    anns = []
+
+    preds = [0]*len(data)
+
+    for cl in cls:
+        anns.append(NetworkReader.readFrom(cl))
+
+    for ann in anns:
+        scores = []
+        for num in range(len(data)):
+            pd = ann.activate(data[num])
+            score = pd[0]-pd[1]
+            scores.append(score)      
+
+        for num in range(len(scores)):
+            wScore = 0 
+            if (num-0) < win[label]//2:
+                left = num-0
+                right = win[label]//2+1
+            elif(len(scores)-1-num)<win[label]//2:
+                right=len(scores)-1-num+1
+                left=win[label]//2
+            else:
+                left = win[label]//2
+                right = win[label]//2+1
+
+            for step in range(-left, right):
+                if scores[num+step] >  0:
+                    wScore += scores[num+step]
+            preds_RI[num]+=wScore/(right+left)           
+            '''
+            if wScore/(right+left) > cutoffs[label]:
+                preds[num]+=1
+            else:
+                preds[num]+=-1
+            '''
+    return preds_RI
+
+def homolgy_infer(f):
+    pr = 'nothing!'
+    for i,l in enumerate(f):
+        if r'***** No hits found *****' in l:
+            homo_E=99.0
+            iden=-1
+            break
+        elif 'Sequences producing significant alignments' in l:
+            eva=temp[i+2].rstrip().split(' ')[-1]
+            if eva[0]=='e':
+                homo_E=float('1'+eva)
+            else:
+                homo_E=float(eva)
+            pr=temp[i+2].rstrip().split(' ')[0]
+        elif '>'+pr in l:
+            iden=float(temp[i+4].split('(')[1].split('%')[0])
+            iden=0.5*((iden-10)/90)+0.5
+            
+            break
+    return homo_E,iden
+
+
+
+
+#Commandline parsing
+disc = "ProNA2019 - Prediction of Protein-, DNA- and RNA- binding protein and the binding sites"
+usage = "usage: %prog [options]"
+parser = OptionParser(usage=usage,description = disc)
+parser.add_option("-p", action="store", type="string", dest="path", help="Directory containing the PredictProtein output files with the suffixes .chk .in .fasta .blastPsiMat .profbval .mdisorder and .profRdb.")
+parser.add_option("-o", action="store", type="string", dest="filename", help="Output file. If not specified, the output is written to STDOUT.")
+parser.add_option("-l", action="store", type="string", dest="label", help="Turn off protein level prediction by inputting binding label, e.g. \"-l  Protein_DNA\".")
+parser.add_option("-d", action="store", type="string", dest="database", help="Use your own local database for PSI-BLAST (homology based inference), default is using the profile (.chk) from big_80 database(rostlab) which is a comprehensive blast database at 80% sequence identity redundancy level")
+parser.add_option("-v", action="store_true", dest="verbose", default=False, help="Print verbose or not (True/False), default is False")
+
+options, args = parser.parse_args()
+
+
+pp_path = options.path
+outfile = options.filename 
+blast_database = options.database
+input_label = options.label
+
+
+
+if not pp_path:
+    parser.print_help()
+    sys.exit()
+
+if pp_path[-1] != '/':
+    pp_path += '/'
+
+suffixes = ['chk','in','fasta','blastPsiMat','profbval','mdisorder','profRdb']
+input_fils = glob.glob(pp_path+'*')
+for f in input_fils:
+    if f.split('.')[-1] in suffixes:
+        shutil.copy(f,tmp_dir + '/query.'+f.split('.')[-1])
+file_check = glob.glob(tmp_dir+'/*')
+if len(file_check)==0:
+    sys.exit('Error!!!Directory must contain the PredictProtein output files with the suffixes .chk .in .fasta .blastPsiMat .profbval .mdisorder and .profRdb.')
+
+
+verbose = options.verbose
+
+
+
+Evalue_DNA = 1e-15
+Evalue_RNA = 1e-15
+Evalue_Pro = 1e-15
+
+
+
+ct_RNA=0.27269370011134497
+ct_DNA=0.29787733409645867
+ct_Pro=0.46745150311929773
+
+
+
+cutoffs = {'DNA':ct_DNA, 'RNA':ct_RNA, 'Protein':ct_Pro}
+
+
+Protein_level=[]
+Protein_level_RI = {'Protein':0,'DNA':0,'RNA':0}
+
+tst_fas = tmp_dir+'/query.fasta'
+
+
+
+
+if input_label:
+
+    if  bool(re.search('Protein', input_label, re.IGNORECASE)):
+        Protein_level.append('Protein')
+        Protein_level_RI['Protein'] = 'None'
+
+
+    if  bool(re.search('DNA', input_label, re.IGNORECASE)):
+        Protein_level.append('DNA')
+        Protein_level_RI['DNA'] = 'None'
+
+    if  bool(re.search('RNA', input_label, re.IGNORECASE)):
+        Protein_level.append('RNA')
+        Protein_level_RI['RNA'] = 'None'
+
+    if len(Protein_level)==0:
+        sys.exit('Wrong label format!The label should be something like: Protein_DNA,if you know the input protein binds DNA and Protein.')
+
+
+
+data_DR,pro,seq = extract_features(tmp_dir ,dir_path+'/selected_feature_DNA_RNA.txt')
+data_Pro,pro,seq = extract_features(tmp_dir ,dir_path+'/selected_feature_Protein.txt')
+
+
+
+data = {'DNA':data_DR,'RNA':data_DR,'Protein':data_Pro}
+
+
+
+
+
+#homology inference
+if verbose and len(Protein_level)<3:
+    print('begin protein level prediciton', flush=True)
+    print('begin homology based inference',flush=True)
+
+
+  
+if blast_database and len(Protein_level)<3:
+    if verbose:
+        print('Creating profile for homology based inference by psiblast against '+blast_database,flush=True)
+    pipe=subprocess.Popen('blastpgp -F F -a 1 -j 3 -b 3000 -e 1 -h 1e-3 -i '+tst_fas+' -d '+blast_database+' -o '+tmp_dir + '/query.blastPsiOutTmp -C '+tmp_dir + '/query.chk',shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    pipe.wait()
+    if (pipe.returncode != 0):
+        for l in pipe.stderr.readlines():
+            l=l.rstrip()
+            print(l.decode())
+        sys.exit()
+
+
+
+if 'Protein' not in Protein_level:
+    pipe=subprocess.Popen('blastpgp -F F -a 1 -b 3000 -h 1e-3 -t 0 -R '+tmp_dir+'/query.chk -d '+dir_path+'/homology_database/Protein/Protein_pos -i '+tst_fas+' -o '+tmp_dir+'/query.pro',shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    pipe.wait()
+    if (pipe.returncode != 0):
+        for l in pipe.stderr.readlines():
+            l=l.rstrip()
+            print(l.decode())
+        sys.exit()
+    temp=open((tmp_dir+'/query.pro')).readlines()
+    homo_pro,iden_pro=homolgy_infer(temp)
+    if homo_pro <= Evalue_Pro:
+        Protein_level.append('Protein')
+        Protein_level_RI['Protein'] = iden_pro
+
+if 'DNA' not in Protein_level:
+    pipe=subprocess.Popen('blastpgp -F F -a 1 -b 3000 -h 1e-3 -t 0 -R '+tmp_dir+'/query.chk  -d '+dir_path+'/homology_database/DNA/DNA_pos -i  '+tst_fas+' -o '+tmp_dir+'/query.dna',shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    pipe.wait()
+    if (pipe.returncode != 0):
+        for l in pipe.stderr.readlines():
+            l=l.rstrip()
+            print(l.decode())
+        sys.exit()
+    temp=open((tmp_dir+'/query.dna')).readlines()
+    homo_dna,iden_dna=homolgy_infer(temp)
+    if homo_dna <= Evalue_DNA:
+        Protein_level.append('DNA')
+        Protein_level_RI['DNA'] = iden_dna
+
+
+if 'RNA' not in Protein_level:
+    pipe=subprocess.Popen('blastpgp -F F -a 1 -b 3000 -h 1e-3 -t 0 -R '+tmp_dir+'/query.chk  -d '+dir_path+'/homology_database/RNA/RNA_pos  -i '+tst_fas+' -o '+tmp_dir+'/query.rna',shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    pipe.wait()
+    if (pipe.returncode != 0):
+        for l in pipe.stderr.readlines():
+            l=l.rstrip()
+            print(l.decode())
+        sys.exit()
+    temp=open((tmp_dir+'/query.rna')).readlines()
+    homo_rna,iden_rna=homolgy_infer(temp)
+    if homo_rna <= Evalue_RNA:
+        Protein_level.append('RNA')
+        Protein_level_RI['RNA'] = iden_rna
+
+
+
+
+
+
+
+
+
+if verbose:
+    print('homology based inference finished',flush=True)
+
+#machine learning method
+if len(Protein_level)<3:
+
+    if verbose:
+        print('begin machine learning',flush=True)
+
+
+    tst_profile = tmp_dir + '/query.profilekernel'
+
+
+    profile = open(tst_profile,'w')
+
+
+    print('>'+pro,file=profile)
+    for ll in open(tmp_dir+'/query.blastPsiMat'):
+        print(ll,end='',file=profile)
+    print('\n',end='',file=profile)
+
+
+    profile.close()
+
+    phrase_model = pickle.load(open(dir_path+'/phrase.model','rb'))
+#    word2vec_index = pickle.load(open(dir_path+'/word2vec.index','rb'))
+    word2vec_index={}
+    word2vec_index['Nucleotide'] = pickle.load(open(dir_path+'/word2vec_Nuc.index','rb'))
+    word2vec_index['DNA'] = pickle.load(open(dir_path+'/word2vec_DNA.index','rb'))
+    word2vec_index['RNA'] = pickle.load(open(dir_path+'/word2vec_RNA.index','rb'))
+    word2vec_index['Protein'] = pickle.load(open(dir_path+'/word2vec_Pro1.index','rb'))
+    word2vec_index['Protein'].update(pickle.load(open(dir_path+'/word2vec_Pro2.index','rb'))
+    word2vec_index['Protein'].update(pickle.load(open(dir_path+'/word2vec_Pro3.index','rb'))
+
+
+    if 'Protein' not in Protein_level:
+
+        # Protein level- Protein binding protein prediction (ProtVec)
+        ngram = 3
+        cls = glob.glob(dir_path+'/model/Protein_level/Protein_word2vec/fold*/*')
+
+        predict_tmp = []
+        for cl in cls:
+            PP_cls = joblib.load(cl)
+            tmp_vec = to_vecs(seq, phrase_model, ngram, word2vec_index['Protein'])
+            if len(tmp_vec) == ngram:
+                tmp = np.zeros(len(tmp_vec[0]))
+                for aa in tmp_vec:
+                    tmp = tmp+aa
+                vect = np.array(tmp).reshape(1, -1)
+            else:
+                vect = np.array(tmp_vec).reshape(1, -1)
+            predict_labels = PP_cls.predict_proba(vect)
+            predict_labelx = PP_cls.predict(vect)
+            predict_tmp.append(predict_labels[0][1])
+
+
+        predict_Pr_word2vec = np.mean(predict_tmp)
+
+
+
+        # Protein level- Protein binding protein prediction (Profile-kernel)
+        predict_tmp = []
+        for fold in ('1','2','3','4','5'):
+            pipe=subprocess.Popen('profkernel-workflow -f '+tst_fas+' -p '+tst_profile+' -m '+dir_path+'/model/Protein_level/Protein_profilekernel/fold'+fold+' -o '+tmp_dir,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            pipe.wait()
+            if verbose:
+                for l in pipe.stdout.readlines():
+                    l=l.rstrip()
+                    print(l.decode(),flush=True)
+            if (pipe.returncode != 0):
+                for l in pipe.stderr.readlines():
+                    l=l.rstrip()
+                    print(l.decode())
+                sys.exit()
+
+            for ll in open(tmp_dir+'/predictions.txt'):
+                ll = ll.rstrip()
+                if '#' not in ll:
+                    temp = ll.split('\t')
+                else:
+                    continue
+
+                pred = temp[1]
+                predprob = float(temp[2])
+                if pred == 'Bind':
+                    predict_tmp.append(predprob)
+                elif pred=='Non_Bind':
+                    predict_tmp.append(1-predprob)
+            os.remove(tmp_dir+'/predictions.txt')
+
+        predict_Pr_profilekernel = np.mean(predict_tmp)
+
+        predict_Pr = max(predict_Pr_word2vec, predict_Pr_profilekernel)
+        if predict_Pr > 0.5:
+            Protein_level.append('Protein')
+            Protein_level_RI['Protein'] = predict_Pr
+
+    if 'DNA' not in Protein_level and 'RNA' not in Protein_level:
+        # Protein level- Nulceotide binding protein prediction (ProtVec)
+        ngram = 1
+        cls = glob.glob(dir_path+'/model/Protein_level/Nucleo_word2vec/fold*/*')
+
+        predict_tmp = []
+        for cl in cls:
+            PP_cls = joblib.load(cl)
+            tmp_vec = to_vecs(seq, 'none', ngram, word2vec_index['Nucleotide'])
+            if len(tmp_vec) == ngram:
+                tmp = np.zeros(len(tmp_vec[0]))
+                for aa in tmp_vec:
+                    tmp = tmp+aa
+                vect = np.array(tmp).reshape(1, -1)
+            else:
+                vect = np.array(tmp_vec).reshape(1, -1)
+            predict_labels = PP_cls.predict_proba(vect)
+            predict_labelx = PP_cls.predict(vect)
+            predict_tmp.append(predict_labels[0][1])
+
+
+        predict_Nuc_word2vec = np.mean(predict_tmp)
+
+
+
+        # Protein level- Nulceotide binding protein prediction (profile_kernel)
+
+        predict_tmp = []        
+        for fold in ('1','2','3','4','5'):
+            pipe=subprocess.Popen('profkernel-workflow -f '+tst_fas+' -p '+tst_profile+' -m '+dir_path+'/model/Protein_level/Nucleo_profilekernel/fold'+fold+' -o '+tmp_dir,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            pipe.wait()
+            if verbose:
+                for l in pipe.stdout.readlines():
+                    l=l.rstrip()
+                    print(l.decode(),flush=True)
+            if (pipe.returncode != 0):
+                for l in pipe.stderr.readlines():
+                    l=l.rstrip()
+                    print(l.decode())
+                sys.exit()
+
+            for ll in open(tmp_dir+'/predictions.txt'):
+                ll = ll.rstrip()
+                if '#' not in ll:
+                    temp = ll.split('\t')
+                else:
+                    continue
+
+                pred = temp[1]
+                predprob = float(temp[2])
+                if pred == 'Bind':
+                    predict_tmp.append(predprob)
+                elif pred=='Non_Bind':
+                    predict_tmp.append(1-predprob)
+            os.remove(tmp_dir+'/predictions.txt')
+
+        predict_Nuc_profilekernel = np.mean(predict_tmp)
+
+        predict_Nuc = max(predict_Nuc_word2vec, predict_Nuc_profilekernel)
+    else:
+        predict_Nuc = 1
+
+    if 'DNA' not in Protein_level:
+        # Protein level- DNA binding protein prediction (ProtVec)
+        ngram = 1
+        cls = glob.glob(dir_path+'/model/Protein_level/DNA_word2vec/fold*/*')
+
+        predict_tmp = []
+        for cl in cls:
+            PP_cls = joblib.load(cl)
+            tmp_vec = to_vecs(seq, 'none', ngram, word2vec_index['DNA'])
+            if len(tmp_vec) == ngram:
+                tmp = np.zeros(len(tmp_vec[0]))
+                for aa in tmp_vec:
+                    tmp = tmp+aa
+                vect = np.array(tmp).reshape(1, -1)
+            else:
+                vect = np.array(tmp_vec).reshape(1, -1)
+            predict_labels = PP_cls.predict_proba(vect)
+            predict_labelx = PP_cls.predict(vect)
+            predict_tmp.append(predict_labels[0][1])
+
+
+        predict_DNA_word2vec = np.mean(predict_tmp)
+
+
+        # Protein level- DNA binding protein prediction (Profile-kernel)
+        predict_tmp = []
+        for fold in ('1','2','3','4','5'):
+            pipe=subprocess.Popen('profkernel-workflow -f '+tst_fas+' -p '+tst_profile+' -m '+dir_path+'/model/Protein_level/DNA_profilekernel/fold'+fold+' -o '+tmp_dir,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            pipe.wait()
+            if verbose:
+                for l in pipe.stdout.readlines():
+                    l=l.rstrip()
+                    print(l.decode(),flush=True)
+            if (pipe.returncode != 0):
+                for l in pipe.stderr.readlines():
+                    l=l.rstrip()
+                    print(l.decode())
+                sys.exit()
+
+            for ll in open(tmp_dir+'/predictions.txt'):
+                ll = ll.rstrip()
+                if '#' not in ll:
+                    temp = ll.split('\t')
+                else:
+                    continue
+
+                pred = temp[1]
+                predprob = float(temp[2])
+                if pred == 'Bind':
+                    predict_tmp.append(predprob)
+                elif pred=='Non_Bind':
+                    predict_tmp.append(1-predprob)
+            os.remove(tmp_dir+'/predictions.txt')
+
+        predict_DNA_profilekernel = np.mean(predict_tmp)
+
+        predict_DNA = max(predict_DNA_word2vec, predict_DNA_profilekernel)
+
+        if predict_Nuc > 0.5 and predict_DNA > 0.5:
+            Protein_level.append('DNA')
+            Protein_level_RI['DNA'] = predict_DNA
+
+
+    if 'RNA' not in Protein_level:
+        # Protein level- RNA binding protein prediction (ProtVec)
+        ngram = 1
+        cls = glob.glob(dir_path+'/model/Protein_level/RNA_word2vec/fold*/*')
+
+        predict_tmp = []
+        for cl in cls:
+            PP_cls = joblib.load(cl)
+            tmp_vec = to_vecs(seq, 'none', ngram, word2vec_index['RNA'])
+            if len(tmp_vec) == ngram:
+                tmp = np.zeros(len(tmp_vec[0]))
+                for aa in tmp_vec:
+                    tmp = tmp+aa
+                vect = np.array(tmp).reshape(1, -1)
+            else:
+                vect = np.array(tmp_vec).reshape(1, -1)
+            predict_labels = PP_cls.predict_proba(vect)
+            predict_labelx = PP_cls.predict(vect)
+            predict_tmp.append(predict_labels[0][1])
+
+
+        predict_RNA_word2vec = np.mean(predict_tmp)
+
+
+        # Protein level- RNA binding protein prediction (Profile-kernel)
+        predict_tmp = []
+        for fold in ('1','2','3','4','5'):
+            pipe=subprocess.Popen('profkernel-workflow -f '+tst_fas+' -p '+tst_profile+' -m '+dir_path+'/model/Protein_level/RNA_profilekernel/fold'+fold+' -o '+tmp_dir,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            pipe.wait()
+            if verbose:
+                for l in pipe.stdout.readlines():
+                    l=l.rstrip()
+                    print(l.decode(),flush=True)
+            if (pipe.returncode != 0):
+                for l in pipe.stderr.readlines():
+                    l=l.rstrip()
+                    print(l.decode())
+                sys.exit()
+
+            for ll in open(tmp_dir+'/predictions.txt'):
+                ll = ll.rstrip()
+                if '#' not in ll:
+                    temp = ll.split('\t')
+                else:
+                    continue
+                pred = temp[1]
+                predprob = float(temp[2])
+                if pred == 'Bind':
+                    predict_tmp.append(predprob)
+                elif pred=='Non_Bind':
+                    predict_tmp.append(1-predprob)
+            os.remove(tmp_dir+'/predictions.txt')
+
+        predict_RNA_profilekernel = np.mean(predict_tmp)
+
+        predict_RNA = max(predict_RNA_word2vec, predict_RNA_profilekernel)
+
+        if predict_Nuc > 0.5 and predict_RNA > 0.5:
+            Protein_level.append('RNA')
+            Protein_level_RI['RNA'] = predict_RNA
+
+    if verbose:
+        print('machine learning finished',flush=True)
+
+
+if verbose:
+    print('begin residue level prediction',flush=True)
+
+#Now, residue level prediciton
+Residue_level = {}
+if len(Protein_level) > 0:
+    for label in Protein_level:
+        Residue_level[label] = residue_prediction(label,data[label])  
+
+if verbose:
+    print('all done',flush=True)
+
+
+if outfile:
+    outf = open(outfile,'w')
+    sys.stdout=outf
+
+
+print('#Protein level prediction')
+print('#RI = Reliability index (score) for positive prediciton (0-100); Pred = Prediction (0,1)')
+print('#','Protein_RI','Protein_Pred','DNA_RI','DNA_Pred','RNA_RI','RNA_Pred',sep='\t')
+if len(Protein_level)==0:
+    line = ''
+    line = line + 'Protein_level'
+    for la in ('Protein','DNA','RNA'):
+        RI = str(int(round(Protein_level_RI[la]*100)))
+        line = line + '\t'+ RI + '\t0'
+    print(line)
+else:
+    line = ''
+    line = line + 'Protein_level'
+    for la in ('Protein','DNA','RNA'):
+        if Protein_level_RI[la]=='None':
+            RI='None'
+        else:
+            RI = str(int(round(Protein_level_RI[la]*100)))
+        if la in Protein_level:
+            line = line + '\t'+ RI + '\t1'
+        else:
+            line = line + '\t'+ RI + '\t0'
+    print(line)
+
+
+
+
+print('\n\n\n')
+print('#Residue level prediction')
+print('#RI = Reliability index (score) for positive prediciton (0-100); Pred = Prediction (0,1)')
+print('#','AA','Protein_RI','Protein_Pred','DNA_RI','DNA_Pred','RNA_RI','RNA_Pred',sep='\t')
+
+for pos in range(len(data_DR)):
+    line='Res_'+str(pos+1)+'\t'+seq[pos]
+    for la in ('Protein','DNA','RNA'): 
+        if la not in Residue_level:
+            line = line+'\t0\t0'
+        elif Residue_level[la][pos]/5 > cutoffs[la]:
+            line = line+'\t'+str(int(round(Residue_level[la][pos]/5*100)))+'\t1'
+        else:
+            line = line+'\t'+str(int(round(Residue_level[la][pos]/5*100)))+'\t0'
+    print(line)
+
+
