@@ -1,0 +1,5 @@
+% 384 instances
+@relation PRED
+@attribute proteinnr NUMERIC
+@attribute class {Non_Bind,Bind}
+@data
