@@ -4,10 +4,10 @@ ProNA2019 can predict protein-DNA, protein-RNA and protein-protein binding sites
 It is a two level prediction. In first level, ProNA2019 will predict whether the input protein is a binding protein. 
 If the input protein is a binding protein, then ProNA2019 will give the residue level prediction.
 
-# How to install
+## How to install
 After downloading, you need install some dependent python package and sofware first.
 
-# Python3 package:
+#### Python3 package:
 
 pybrain (>=0.3.3)
 
@@ -17,7 +17,7 @@ botocore (>=1.10.33)
 
 smart-open (>=1.5.7)
 
-# Software:
+#### Software:
 
 ncbi-blast+
 
