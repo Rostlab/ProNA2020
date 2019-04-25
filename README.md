@@ -5,7 +5,7 @@ It is a two level prediction. In first level, ProNA2019 will predict whether the
 If the input protein is a binding protein, then ProNA2019 will give the residue level prediction.
 
 ## How to install
-After downloading, you need install some dependent python package and sofware first.
+After downloading, you need install some necessary python package and sofware before you use ProNA2019.
 
 #### Python3 package:
 
@@ -23,5 +23,27 @@ ncbi-blast+
 
 fastprofkernel (>=1.0.24)
 
+## How to run
 
+Usage: prona2019 [options]
+
+Options:
+
+* -h:show this help message and exit
+  
+* -p:PATH,Directory containing the PredictProtein output files with the
+               suffixes .chk .in .fasta .blastPsiMat .profbval .mdisorder and
+               .profRdb.
+               
+* -o:FILENAME,Output file. If not specified, the output is written to STDOUT.
+  
+* -l:LABEL,Turn off protein level prediction by inputting binding label,
+               e.g. "-l  Protein_DNA", which means the input protein is already known as a Protein- and DNA-binding protein.
+               
+* -d:DATABASE,Use your own local database for PSI-BLAST (homology based
+               inference), default is using the profile (.chk) from big_80
+               database(rostlab) which is a comprehensive blast database at
+               80% sequence identity redundancy level
+               
+* -v:Print verbose or not (True/False), default is False
 
