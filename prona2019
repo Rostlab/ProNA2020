@@ -292,8 +292,8 @@ if len(Protein_level)<3:
     word2vec_index['DNA'] = pickle.load(open(dir_path+'/word2vec_DNA.index','rb'))
     word2vec_index['RNA'] = pickle.load(open(dir_path+'/word2vec_RNA.index','rb'))
     word2vec_index['Protein'] = pickle.load(open(dir_path+'/word2vec_Pro1.index','rb'))
-    word2vec_index['Protein'].update(pickle.load(open(dir_path+'/word2vec_Pro2.index','rb'))
-    word2vec_index['Protein'].update(pickle.load(open(dir_path+'/word2vec_Pro3.index','rb'))
+    word2vec_index['Protein'].update(pickle.load(open(dir_path+'/word2vec_Pro2.index','rb')))
+    word2vec_index['Protein'].update(pickle.load(open(dir_path+'/word2vec_Pro3.index','rb')))
 
 
     if 'Protein' not in Protein_level:
