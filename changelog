@@ -1,3 +1,7 @@
+prona2019 (0.0.9.4) unstable; urgency=low
+
+  * change scale of Reliability index (score)
+  
 prona2019 (0.0.9.3) unstable; urgency=high
 
   * Bugfix
