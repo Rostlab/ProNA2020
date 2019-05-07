@@ -567,14 +567,15 @@ if outfile:
     sys.stdout=outf
 
 
+
 print('#Protein level prediction')
-print('#RI = Reliability index (score) for positive prediciton (0-100); Pred = Prediction (0,1)')
+print('#RI = Reliability index (score) for the prediciton (-100~100); Pred = Prediction (0,1)')
 print('#','Protein_RI','Protein_Pred','DNA_RI','DNA_Pred','RNA_RI','RNA_Pred',sep='\t')
 if len(Protein_level)==0:
     line = ''
     line = line + 'Protein_level'
     for la in ('Protein','DNA','RNA'):
-        RI = str(int(round(Protein_level_RI[la]*100)))
+        RI = str(int(round((Protein_level_RI[la]-0.5)/0.5*100)))
         line = line + '\t'+ RI + '\t0'
     print(line)
 else:
@@ -582,9 +583,10 @@ else:
     line = line + 'Protein_level'
     for la in ('Protein','DNA','RNA'):
         if Protein_level_RI[la]=='None':
-            RI='None'
+            RI = 'None'
         else:
-            RI = str(int(round(Protein_level_RI[la]*100)))
+            RI = str(int(round((Protein_level_RI[la]-0.5)/0.5*100)))
+
         if la in Protein_level:
             line = line + '\t'+ RI + '\t1'
         else:
@@ -596,18 +598,22 @@ else:
 
 print('\n\n\n')
 print('#Residue level prediction')
-print('#RI = Reliability index (score) for positive prediciton (0-100); Pred = Prediction (0,1)')
+print('#RI = Reliability index (score) for the prediciton (-100~100); Pred = Prediction (0,1)')
 print('#','AA','Protein_RI','Protein_Pred','DNA_RI','DNA_Pred','RNA_RI','RNA_Pred',sep='\t')
 
 for pos in range(len(data_DR)):
     line='Res_'+str(pos+1)+'\t'+seq[pos]
-    for la in ('Protein','DNA','RNA'): 
+    for la in ('Protein','DNA','RNA'):
         if la not in Residue_level:
             line = line+'\t0\t0'
         elif Residue_level[la][pos]/5 > cutoffs[la]:
-            line = line+'\t'+str(int(round(Residue_level[la][pos]/5*100)))+'\t1'
+            line = line+'\t'+str(int(round(((Residue_level[la][pos]/5)-cutoffs[la])/(1-cutoffs[la])*100)))+'\t1'
         else:
-            line = line+'\t'+str(int(round(Residue_level[la][pos]/5*100)))+'\t0'
+            line = line+'\t'+str(int(round((cutoffs[la]-(Residue_level[la][pos]/5))/(0-cutoffs[la])*100)))+'\t0'
     print(line)
+
+
+
+
 
 
