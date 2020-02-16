@@ -1,8 +1,8 @@
-# ProNA2019
-ProNA2019: System predicting protein-DNA, protein-RNA and protein-protein binding sites from sequence
-ProNA2019 can predict protein-DNA, protein-RNA and protein-protein binding sites with only sequence information. 
-It is a two level prediction. In first level, ProNA2019 will predict whether the input protein is a binding protein. 
-If the input protein is a binding protein, then ProNA2019 will give the residue level prediction.
+# ProNA2020
+ProNA2020: System predicting protein-DNA, protein-RNA and protein-protein binding sites from sequence
+ProNA2020 can predict protein-DNA, protein-RNA and protein-protein binding sites with only sequence information. 
+It is a two level prediction. In first level, ProNA2020 will predict whether the input protein is a binding protein. 
+If the input protein is a binding protein, then ProNA2020 will give the residue level prediction.
 
 ## How to install
 After downloading, you need install some necessary python package and sofware before you use ProNA2019.
@@ -25,7 +25,7 @@ fastprofkernel (>=1.0.24)
 
 ## How to run
 
-Usage: prona2019 [options]
+Usage: prona2020 [options]
 
 Options:
 
